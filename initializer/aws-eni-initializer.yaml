@@ -1,0 +1,20 @@
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  initializers:
+    pending: []
+  labels:
+    app: aws-vpc-eni-initializer
+  name: aws-vpc-eni-initializer
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: aws-vpc-eni-initializer
+      name: aws-vpc-eni-initializer
+    spec:
+      containers:
+        - name: aws-vpc-eni-initializer
+          image: 694065802095.dkr.ecr.us-east-1.amazonaws.com/amazon-k8s-cni:latest
+          imagePullPolicy: Always

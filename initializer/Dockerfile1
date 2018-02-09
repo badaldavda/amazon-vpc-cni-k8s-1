@@ -1,0 +1,3 @@
+FROM debian
+COPY ./aws-vpc-eni-initializer /aws-vpc-eni-initializer
+ENTRYPOINT /aws-vpc-eni-initializer --initializer-name aws-vpc-enii-1.initializer.kubernetes.io --configmap aws-vpc-eni-initializer-1
