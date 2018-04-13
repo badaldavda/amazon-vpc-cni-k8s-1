@@ -38,6 +38,7 @@ const (
 	metadataAZ           = "placement/availability-zone/"
 	metadataLocalIP      = "local-ipv4"
 	metadataInstanceID   = "instance-id"
+	metadataInstanceType = "instance-type"
 	metadataMAC          = "mac"
 	metadataSGs          = "/security-group-ids/"
 	metadataSubnetID     = "/subnet-id/"
@@ -94,6 +95,7 @@ type EC2InstanceMetadataCache struct {
 	cidrBlock        string
 	localIPv4        string
 	instanceID       string
+	instanceType     string
 	vpcIPv4CIDR      string
 	primaryENI       string
 	primaryENImac    string
@@ -186,6 +188,14 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata() error {
 		return errors.Wrap(err, "get instance metadata: failed to retrieve instance-id")
 	}
 	log.Debugf("Found instance-id: %s ", cache.instanceID)
+
+	// retrieve instance-type
+	cache.instanceType, err = cache.ec2Metadata.GetMetadata(metadataInstanceType)
+	if err != nil {
+		log.Errorf("Failed to retrieve instance-type from instance metadata %v", err)
+		return errors.Wrap(err, "get instance metadata: failed to retrieve instance-type")
+	}
+	log.Debugf("Found instance-type: %s ", cache.instanceType)
 
 	// retrieve primary interface's mac
 	mac, err := cache.ec2Metadata.GetMetadata(metadataMAC)
@@ -674,13 +684,31 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddress(eniID string) error {
 	return nil
 }
 
+// GetENIipLimit return IP address limit per ENI based on EC2 instance type
+func (cache *EC2InstanceMetadataCache) GetENIipLimit() (int64, error) {
+	ipLimit, ok := InstanceIPsAvailable[cache.instanceType]
+	if !ok {
+		log.Errorf("Failed to get eni IP limit due to unknown instance type %s", cache.instanceType)
+		return 0, errors.Errorf("vpc ip resource(eni ip limit): unknown instance thype %s", cache.instanceType)
+	}
+
+	return ipLimit - 1, nil
+}
+
 // AllocAllIPAddress allocates all IP addresses available on eni
 func (cache *EC2InstanceMetadataCache) AllocAllIPAddress(eniID string) error {
 	log.Infof("Trying to allocate all available ip addresses on eni: %s", eniID)
 
+	ipLimit, err := cache.GetENIipLimit()
+
+	if err != nil {
+		// for unknown instance type, will allocate one ip address at a time
+		ipLimit = 1
+	}
+
 	input := &ec2.AssignPrivateIpAddressesInput{
 		NetworkInterfaceId:             aws.String(eniID),
-		SecondaryPrivateIpAddressCount: aws.Int64(1),
+		SecondaryPrivateIpAddressCount: aws.Int64(ipLimit),
 	}
 
 	for {
