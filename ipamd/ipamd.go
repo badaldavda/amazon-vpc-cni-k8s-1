@@ -313,7 +313,8 @@ func (c *IPAMContext) nodeIPPoolTooLow() bool {
 	log.Debugf("IP pool stats: total=%d, used=%d, c.currentMaxAddrsPerENI =%d, c.maxAddrsPerENI = %d",
 		total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 
-	return ((total - used) <= c.currentMaxAddrsPerENI)
+	return true
+	//	return ((total - used) <= c.currentMaxAddrsPerENI)
 }
 
 // NodeIPPoolTooHigh returns true if IP pool is above high threshhold
@@ -323,6 +324,7 @@ func (c *IPAMContext) nodeIPPoolTooHigh() bool {
 	log.Debugf("IP pool stats: total=%d, used=%d, c.currentMaxAddrsPerENI =%d, c.maxAddrsPerENI = %d",
 		total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 
-	return (total-used > 2*c.currentMaxAddrsPerENI)
+	return false
+	//	return (total-used > 2*c.currentMaxAddrsPerENI)
 
 }
