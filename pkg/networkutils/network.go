@@ -24,6 +24,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/pkg/errors"
 
 	log "github.com/cihub/seelog"
@@ -87,6 +89,14 @@ type NetworkAPIs interface {
 	SetupHostNetwork(vpcCIDR *net.IPNet, primaryMAC string, primaryAddr *net.IP) error
 	// SetupENINetwork performs eni level network configuration
 	SetupENINetwork(eniIP string, mac string, table int, subnetCIDR string) error
+
+	GetRuleList() ([]netlink.Rule, error)
+
+	GetRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) ([]netlink.Rule, error)
+
+	UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNet, toCIDRs []string, toFlag bool) error
+
+	DelRuleListBySrc(src net.IPNet) error
 }
 
 type linuxNetwork struct {
@@ -548,4 +558,131 @@ func isNetworkUnreachable(err error) bool {
 		return errno == syscall.ENETUNREACH
 	}
 	return false
+}
+
+func (n *linuxNetwork) GetRuleList() ([]netlink.Rule, error) {
+	return n.netLink.RuleList(unix.AF_INET)
+}
+
+func (n *linuxNetwork) GetRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) ([]netlink.Rule, error) {
+	var srcRuleList []netlink.Rule
+
+	for _, rule := range ruleList {
+		if rule.Src != nil && rule.Src.IP.Equal(src.IP) {
+			srcRuleList = append(srcRuleList, rule)
+		}
+	}
+
+	return srcRuleList, nil
+}
+
+func (n *linuxNetwork) DelRuleListBySrc(src net.IPNet) error {
+
+	log.Infof("Delete Rule List By Src [%v", src)
+
+	ruleList, err := n.GetRuleList()
+	if err != nil {
+		log.Errorf("DelRuleListBySrc: failed to get rule list %v", err)
+		return err
+	}
+
+	srcRuleList, err := n.GetRuleListBySrc(ruleList, src)
+
+	if err != nil {
+		log.Errorf("DelRuleListBySrc: failed to retrieve rule list %v", err)
+		return err
+	}
+
+	log.Infof("Remove current list [%v]", srcRuleList)
+
+	for _, rule := range srcRuleList {
+		if n.netLink.RuleDel(&rule); err != nil && !containsNoSuchRule(err) {
+			log.Errorf("Failed to cleanup old IP rule: %v", err)
+			return errors.Wrapf(err, "DelRuleListBySrc: failed to delete old rule")
+		}
+
+		var toDst string
+
+		if rule.Dst != nil {
+			toDst = rule.Dst.String()
+		}
+		log.Debugf("DelRuleListBySrc: Successfully removed current rule [%v] to %s", rule, toDst)
+	}
+
+	return nil
+}
+
+func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNet, toCIDRs []string, toFlag bool) error {
+	log.Infof("Update Rule List[%v] for source[%v] with toCIDRs[%v], toFlag[%v]", ruleList, src, toCIDRs, toFlag)
+
+	srcRuleList, err := n.GetRuleListBySrc(ruleList, src)
+
+	if err != nil {
+		log.Errorf("UpdateRuleListBySrc: failed to retrieve rule list %v", err)
+		return err
+	}
+
+	log.Infof("Remove current list [%v]", srcRuleList)
+	var srcRuleTable int
+
+	for _, rule := range srcRuleList {
+		srcRuleTable = rule.Table
+		if n.netLink.RuleDel(&rule); err != nil && !containsNoSuchRule(err) {
+			log.Errorf("Failed to cleanup old IP rule: %v", err)
+			return errors.Wrapf(err, "UpdateRuleListBySrc: failed to delete old rule")
+		}
+
+		var toDst string
+
+		if rule.Dst != nil {
+			toDst = rule.Dst.String()
+		}
+		log.Debugf("UpdateRuleListBySrc: Successfully removed current rule [%v] to %s", rule, toDst)
+	}
+
+	if len(srcRuleList) == 0 {
+		log.Debug("UpdateRuleListBySrc: empty list, no need to update")
+		return nil
+	}
+
+	if toFlag {
+		for _, cidr := range toCIDRs {
+			podRule := n.netLink.NewRule()
+			_, podRule.Dst, _ = net.ParseCIDR(cidr)
+			podRule.Src = &src
+			podRule.Table = srcRuleTable
+			podRule.Priority = fromPodRulePriority
+
+			err = n.netLink.RuleAdd(podRule)
+			if err != nil {
+				log.Errorf("Failed to add pod IP rule: %v", err)
+				return errors.Wrapf(err, "UpdateRuleListBySrc: failed to add pod rule")
+			}
+			var toDst string
+
+			if podRule.Dst != nil {
+				toDst = podRule.Dst.String()
+			}
+
+			log.Infof("UpdateRuleListBySrc: Successfully added pod rule[%v] to %s", podRule, toDst)
+
+		}
+	} else {
+		podRule := n.netLink.NewRule()
+
+		podRule.Src = &src
+		podRule.Table = srcRuleTable
+		podRule.Priority = fromPodRulePriority
+
+		err = n.netLink.RuleAdd(podRule)
+		if err != nil {
+			log.Errorf("Failed to add pod IP rule: %v", err)
+			return errors.Wrapf(err, "UpdateRuleListBySrc: failed to add pod rule")
+		}
+
+		log.Infof("UpdateRuleListBySrc: Successfully added pod rule[%v]", podRule)
+
+	}
+
+	return nil
 }

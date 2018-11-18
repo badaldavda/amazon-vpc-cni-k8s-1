@@ -1,0 +1,119 @@
+sudo ./test-network 1
+ip rule show
+0:	from all lookup local 
+32766:	from all lookup main 
+32767:	from all lookup default 
+
+
+sudo ip rule add from 192.158.1.10/32 to 192.158.2.0/24 table 2 priority 1536
+
+ip rule show
+0:	from all lookup local 
+1536:	from 192.158.1.10 to 192.158.2.0/24 lookup 2 
+32766:	from all lookup main 
+32767:	from all lookup default 
+
+
+sudo ./test-network 1
+
+ip rule show
+0:	from all lookup local 
+1536:	from 192.158.1.10 to 192.168.0.0/24 lookup 2 
+1536:	from 192.158.1.10 to 192.168.1.0/24 lookup 2 
+1536:	from 192.158.1.10 to 192.168.2.0/24 lookup 2 
+32766:	from all lookup main 
+32767:	from all lookup default 
+
+
+sudo ./test-network 2
+
+ip rule show
+0:	from all lookup local 
+1536:	from 192.158.1.10 to 192.168.0.0/24 lookup 2 
+1536:	from 192.158.1.10 to 192.168.3.0/24 lookup 2 
+1536:	from 192.158.1.10 to 192.168.2.0/24 lookup 2 
+32766:	from all lookup main 
+32767:	from all lookup default 
+
+
+sudo ./test-network del
+
+ip rule show
+0:	from all lookup local 
+32766:	from all lookup main 
+32767:	from all lookup default 
+
+
+sudo ip rule add from 192.158.1.10/32 to 192.158.2.0/24 table 2 priority 1536
+
+ip rule show
+0:	from all lookup local 
+1536:	from 192.158.1.10 to 192.158.2.0/24 lookup 2 
+32766:	from all lookup main 
+32767:	from all lookup default 
+
+
+sudo ./test-network 1
+
+ip rule show
+0:      from all lookup local
+1536:   from 192.158.1.10 to 192.168.0.0/24 lookup 2
+1536:   from 192.158.1.10 to 192.168.1.0/24 lookup 2
+1536:   from 192.158.1.10 to 192.168.2.0/24 lookup 2
+32766:  from all lookup main
+32767:  from all lookup default
+
+sudo ./test-network 3
+
+ip rule show
+0:	from all lookup local 
+1536:	from 192.158.1.10 lookup 2 
+32766:	from all lookup main 
+32767:	from all lookup default 
+
+sudo ./test-network del
+ubuntu@ip-10-0-1-11:~/workspace/src/github.com/aws/amazon-vpc-cni-k8s$ ip rule show
+0:	from all lookup local 
+32766:	from all lookup main 
+32767:	from all lookup default 
+
+
+sudo ip rule add from 192.158.1.10/32 to 192.158.2.0/24 table 2 priority 1536
+ubuntu@ip-10-0-1-11:~/workspace/src/github.com/aws/amazon-vpc-cni-k8s$ ip rule show
+0:	from all lookup local 
+1536:	from 192.158.1.10 to 192.158.2.0/24 lookup 2 
+32766:	from all lookup main 
+32767:	from all lookup default 
+
+sudo ./test-network 1
+ip rule show
+0:	from all lookup local 
+1536:	from 192.158.1.10 to 192.168.0.0/24 lookup 2 
+1536:	from 192.158.1.10 to 192.168.1.0/24 lookup 2 
+1536:	from 192.158.1.10 to 192.168.2.0/24 lookup 2 
+32766:	from all lookup main 
+32767:	from all lookup default 
+
+
+sudo ./test-network 3
+1542524956871563967 [Info] testing 3, updating non-nat rules
+ubuntu@ip-10-0-1-11:~/workspace/src/github.com/aws/amazon-vpc-cni-k8s$ ip rule show
+0:	from all lookup local 
+1536:	from 192.158.1.10 lookup 2 
+32766:	from all lookup main 
+32767:	from all lookup default 
+
+
+sudo ./test-network 2
+ip rule show
+0:	from all lookup local 
+1536:	from 192.158.1.10 to 192.168.0.0/24 lookup 2 
+1536:	from 192.158.1.10 to 192.168.3.0/24 lookup 2 
+1536:	from 192.158.1.10 to 192.168.2.0/24 lookup 2 
+32766:	from all lookup main 
+32767:	from all lookup default 
+
+
+
+
+
