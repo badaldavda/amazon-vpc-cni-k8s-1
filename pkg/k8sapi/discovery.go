@@ -223,6 +223,7 @@ func (d *Controller) handlePodUpdate(key string) error {
 		}
 
 		log.Infof(" Add/Update for Pod %s on my node, namespace = %s, IP = %s", podName, d.workerPods[key].Namespace, d.workerPods[key].IP)
+		log.Infof(" liwwu: Pod's annotation: %v", pod.GetAnnotations())
 	}
 	return nil
 }

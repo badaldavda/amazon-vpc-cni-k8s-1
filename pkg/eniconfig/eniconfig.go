@@ -78,9 +78,9 @@ type ENIConfigInfo struct {
 // NewENIConfigController creates a new ENIConfig controller
 func NewENIConfigController() *ENIConfigController {
 	return &ENIConfigController{
-		myNodeName:             os.Getenv("MY_NODE_NAME"),
-		eni:                    make(map[string]*v1alpha1.ENIConfigSpec),
-		myENI:                  eniConfigDefault,
+		myNodeName: os.Getenv("MY_NODE_NAME"),
+		eni:        make(map[string]*v1alpha1.ENIConfigSpec),
+		myENI:      eniConfigDefault,
 		eniConfigAnnotationDef: getEniConfigAnnotationDef(),
 		eniConfigLabelDef:      getEniConfigLabelDef(),
 	}
@@ -113,7 +113,8 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			return nil
 		}
 
-		log.Infof("Handle ENIConfig Add/Update:  %s, %v, %s", eniConfigName, curENIConfig.Spec.SecurityGroups, curENIConfig.Spec.Subnet)
+		log.Infof("Handle ENIConfig Add/Update:  %s, %v, %v, %s", eniConfigName, curENIConfig, curENIConfig.Spec.SecurityGroups, curENIConfig.Spec.Subnet)
+		log.Infof("eniConfigName: %s, CGWIP: %s, VNID: %s", eniConfigName, curENIConfig.Spec.CGWIP, curENIConfig.Spec.VNID)
 
 		h.controller.eniLock.Lock()
 		defer h.controller.eniLock.Unlock()
