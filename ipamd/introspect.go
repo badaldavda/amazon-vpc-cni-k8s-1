@@ -73,8 +73,8 @@ func (c *IPAMContext) setupServer() *http.Server {
 		"/v1/pods":                      podV1RequestHandler(c),
 		"/v1/networkutils-env-settings": networkEnvV1RequestHandler(c),
 		"/v1/ipamd-env-settings":        ipamdEnvV1RequestHandler(c),
-		"/v1/eni-configs":               eniConfigRequestHandler(c),
-		"/v1/pod-networks":              podNetworkHandler(c),
+		"/v1/network-configs":           eniConfigRequestHandler(c),
+		"/v1/pod-network-association":   podNetworkHandler(c),
 	}
 	paths := make([]string, 0, len(serverFunctions))
 	for path := range serverFunctions {
