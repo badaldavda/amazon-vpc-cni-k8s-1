@@ -34,6 +34,7 @@ type controller struct {
 // K8SAPIs defines interface to use kubelet introspection API
 type K8SAPIs interface {
 	K8SGetLocalPodIPs() ([]*K8SPodInfo, error)
+	GetPodSpec() *map[string]K8SPodInfo
 }
 
 // K8SPodInfo provides pod info
@@ -45,8 +46,9 @@ type K8SPodInfo struct {
 	// Container is pod's container id
 	Container string
 	// IP is pod's ipv4 address
-	IP  string
-	UID string
+	IP      string
+	UID     string
+	Network string
 }
 
 // ErrInformerNotSynced indicates that it has not synced with API server yet
@@ -159,6 +161,30 @@ func (d *Controller) K8SGetLocalPodIPs() ([]*K8SPodInfo, error) {
 	return localPods, nil
 }
 
+func (d *Controller) GetPodSpec() *map[string]K8SPodInfo {
+
+	localPods := make(map[string]K8SPodInfo, len(d.workerPods))
+
+	if !d.synced {
+		log.Info("GetPodSpec: informer not synced yet")
+		return nil
+	}
+
+	log.Debug("GetPodSpec start ...")
+	d.workerPodsLock.Lock()
+	defer d.workerPodsLock.Unlock()
+
+	for _, pod := range d.workerPods {
+		log.Infof("GetPodSpec discovered local Pods: %s %s %s %s",
+			pod.Name, pod.Namespace, pod.IP, pod.UID)
+		key := pod.Name + "_" + pod.Namespace + "_" + pod.UID
+
+		localPods[key] = *pod
+	}
+
+	return &localPods
+}
+
 // The rest of logic/code are taken from kubernetes/client-go/examples/workqueue
 func newController(queue workqueue.RateLimitingInterface, indexer cache.Indexer, informer cache.Controller) *controller {
 	return &controller{
@@ -215,14 +241,21 @@ func (d *Controller) handlePodUpdate(key string) error {
 		d.workerPodsLock.Lock()
 		defer d.workerPodsLock.Unlock()
 
+		var podNetwork string
+		val, ok := pod.GetAnnotations()["network"]
+		if ok {
+			podNetwork = val
+		}
+
 		d.workerPods[key] = &K8SPodInfo{
 			Name:      podName,
 			Namespace: pod.GetNamespace(),
 			UID:       string(pod.GetUID()),
 			IP:        pod.Status.PodIP,
+			Network:   podNetwork,
 		}
 
-		log.Infof(" Add/Update for Pod %s on my node, namespace = %s, IP = %s", podName, d.workerPods[key].Namespace, d.workerPods[key].IP)
+		log.Infof(" Add/Update for Pod %s on my node, namespace = %s, IP = %s, Network=%s", podName, d.workerPods[key].Namespace, d.workerPods[key].IP, d.workerPods[key].Network)
 		log.Infof(" liwwu: Pod's annotation: %v", pod.GetAnnotations())
 	}
 	return nil

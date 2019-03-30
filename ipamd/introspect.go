@@ -74,6 +74,7 @@ func (c *IPAMContext) setupServer() *http.Server {
 		"/v1/networkutils-env-settings": networkEnvV1RequestHandler(c),
 		"/v1/ipamd-env-settings":        ipamdEnvV1RequestHandler(c),
 		"/v1/eni-configs":               eniConfigRequestHandler(c),
+		"/v1/pod-networks":              podNetworkHandler(c),
 	}
 	paths := make([]string, 0, len(serverFunctions))
 	for path := range serverFunctions {
@@ -139,6 +140,18 @@ func podV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Requ
 func eniConfigRequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		responseJSON, err := json.Marshal(ipam.eniConfig.Getter())
+		if err != nil {
+			log.Error("Failed to marshal pod data: %v", err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+		w.Write(responseJSON)
+	}
+}
+
+func podNetworkHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		responseJSON, err := json.Marshal(ipam.k8sClient.GetPodSpec())
 		if err != nil {
 			log.Error("Failed to marshal pod data: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
