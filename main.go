@@ -53,7 +53,7 @@ func _main() int {
 	go discoverController.DiscoverK8SPods()
 
 	eniConfigController := eniconfig.NewENIConfigController()
-	if ipamd.UseCustomNetworkCfg() {
+	if ipamd.UseGeneveMode() {
 		go eniConfigController.Start()
 	}
 

@@ -86,6 +86,9 @@ const (
 	// This environment is used to specify whether Pods need to use securitygroup and subnet defined in ENIConfig CRD
 	// When it is NOT set or set to false, ipamD will use primary interface security group and subnet for Pod network.
 	envCustomNetworkCfg = "AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG"
+
+	// This environment is used to specify whether Pods need to use geneve tunnel.
+	envGeneveMode = "AWS_VPC_K8S_CNI_GENEVE_MODE"
 )
 
 var (
@@ -849,6 +852,19 @@ func UseCustomNetworkCfg() bool {
 	return defaultValue
 }
 
+func UseGeneveMode() bool {
+	defaultValue := false
+	if strValue := os.Getenv(envGeneveMode); strValue != "" {
+		parsedValue, err := strconv.ParseBool(strValue)
+		if err != nil {
+			log.Error("Failed to parse "+envGeneveMode+"; using default: "+fmt.Sprint(defaultValue), err.Error())
+			return defaultValue
+		}
+		return parsedValue
+	}
+	return defaultValue
+}
+
 func getWarmIPTarget() int {
 	inputStr, found := os.LookupEnv(envWarmIPTarget)
 
@@ -887,5 +903,6 @@ func GetConfigForDebug() map[string]interface{} {
 		envWarmIPTarget:     getWarmIPTarget(),
 		envWarmENITarget:    getWarmENITarget(),
 		envCustomNetworkCfg: UseCustomNetworkCfg(),
+		envGeneveMode:       UseGeneveMode(),
 	}
 }
