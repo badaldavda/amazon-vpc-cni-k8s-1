@@ -174,8 +174,9 @@ func (d *Controller) GetPodSpec() *map[string]K8SPodInfo {
 	d.workerPodsLock.Lock()
 	defer d.workerPodsLock.Unlock()
 
-	for _, pod := range d.workerPods {
-		log.Infof("GetPodSpec discovered local Pods: %s %s %s %s",
+	for key, pod := range d.workerPods {
+		log.Infof("GetPodSpec discovered local Pods key[%v]: %s %s %s %s",
+			key,
 			pod.Name, pod.Namespace, pod.IP, pod.UID)
 		key := pod.Name + "_" + pod.Namespace + "_" + pod.UID
 

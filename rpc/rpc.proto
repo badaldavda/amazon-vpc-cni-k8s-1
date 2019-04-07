@@ -23,6 +23,9 @@ message  AddNetworkReply{
   int32 DeviceNumber = 4;
   bool UseExternalSNAT = 5;
   repeated string VPCcidrs = 6;
+  string CGWIP = 7;
+  int32 VNI = 8;
+  int32 DstPort = 9;
 }
 
 message DelNetworkRequest {

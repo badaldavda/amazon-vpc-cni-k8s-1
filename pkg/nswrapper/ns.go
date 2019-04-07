@@ -19,6 +19,7 @@ import (
 
 type NS interface {
 	WithNetNSPath(nspath string, toRun func(ns.NetNS) error) error
+	GetNS(nspath string) (ns.NetNS, error)
 }
 
 type nsType struct {
@@ -31,4 +32,8 @@ func NewNS() NS {
 func (*nsType) WithNetNSPath(nspath string, toRun func(ns.NetNS) error) error {
 	return ns.WithNetNSPath(nspath, toRun)
 
+}
+
+func (*nsType) GetNS(nspath string) (ns.NetNS, error) {
+	return ns.GetNS(nspath)
 }
