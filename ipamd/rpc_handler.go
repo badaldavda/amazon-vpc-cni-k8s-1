@@ -43,10 +43,35 @@ func (s *server) AddNetwork(ctx context.Context, in *pb.AddNetworkRequest) (*pb.
 	log.Infof("Received AddNetwork for NS %s, Pod %s, NameSpace %s, Container %s, ifname %s",
 		in.Netns, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, in.K8S_POD_INFRA_CONTAINER_ID, in.IfName)
 
+	// find Prod's network
+	podKey := in.K8S_POD_NAMESPACE + "/" + in.K8S_POD_NAME
+	network, err := s.ipamContext.k8sClient.GetPodNetwork(podKey)
+	if err != nil {
+		log.Errorf("Failed to get network for pod: %v, error: %v", podKey, err)
+		resp := pb.AddNetworkReply{
+			Success: false,
+		}
+		return &resp, nil
+	}
+
+	port, cgwIP, vnid, err := s.ipamContext.eniConfig.AllocatePort(network, podKey)
+	if err != nil {
+		log.Errorf("Failed to allocate port for pod: %v, error: %v", podKey, err)
+		resp := pb.AddNetworkReply{
+			Success: false,
+		}
+		return &resp, nil
+	}
+
 	addr, deviceNumber, err := s.ipamContext.dataStore.AssignPodIPv4Address(&k8sapi.K8SPodInfo{
 		Name:      in.K8S_POD_NAME,
 		Namespace: in.K8S_POD_NAMESPACE,
-		Container: in.K8S_POD_INFRA_CONTAINER_ID})
+		Container: in.K8S_POD_INFRA_CONTAINER_ID,
+		Port:      port})
+
+	if err != nil {
+		s.ipamContext.eniConfig.ReleasePort(network, port)
+	}
 
 	var pbVPCcidrs []string
 	for _, cidr := range s.ipamContext.awsClient.GetVPCIPv4CIDRs() {
@@ -61,6 +86,9 @@ func (s *server) AddNetwork(ctx context.Context, in *pb.AddNetworkRequest) (*pb.
 		DeviceNumber:    int32(deviceNumber),
 		UseExternalSNAT: s.ipamContext.networkClient.UseExternalSNAT(),
 		VPCcidrs:        pbVPCcidrs,
+		CGWIP:           cgwIP,
+		VNI:             vnid,
+		DstPort:         int32(port),
 	}
 
 	log.Infof("Send AddNetworkReply: IPv4Addr %s, DeviceNumber: %d, err: %v", addr, deviceNumber, err)
@@ -73,18 +101,24 @@ func (s *server) DelNetwork(ctx context.Context, in *pb.DelNetworkRequest) (*pb.
 		in.IPv4Addr, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, in.K8S_POD_INFRA_CONTAINER_ID)
 	delIPCnt.With(prometheus.Labels{"reason": in.Reason}).Inc()
 
-	ip, deviceNumber, err := s.ipamContext.dataStore.UnAssignPodIPv4Address(&k8sapi.K8SPodInfo{
+	ip, deviceNumber, port, err := s.ipamContext.dataStore.UnAssignPodIPv4Address(&k8sapi.K8SPodInfo{
 		Name:      in.K8S_POD_NAME,
 		Namespace: in.K8S_POD_NAMESPACE,
 		Container: in.K8S_POD_INFRA_CONTAINER_ID})
 
 	if err != nil && err == datastore.ErrUnknownPod {
 		// If L-IPAMD restarts, the pod's IP address are assigned by only pod's name and namespace due to kubelet's introspection.
-		ip, deviceNumber, err = s.ipamContext.dataStore.UnAssignPodIPv4Address(&k8sapi.K8SPodInfo{
+		ip, deviceNumber, _, err = s.ipamContext.dataStore.UnAssignPodIPv4Address(&k8sapi.K8SPodInfo{
 			Name:      in.K8S_POD_NAME,
 			Namespace: in.K8S_POD_NAMESPACE})
 	}
 	log.Infof("Send DelNetworkReply: IPv4Addr %s, DeviceNumber: %d, err: %v", ip, deviceNumber, err)
+	// find Prod's network
+	podKey := in.K8S_POD_NAMESPACE + "/" + in.K8S_POD_NAME
+	network, err := s.ipamContext.k8sClient.GetPodNetwork(podKey)
+	if err == nil {
+		s.ipamContext.eniConfig.ReleasePort(network, port)
+	}
 
 	return &pb.DelNetworkReply{Success: err == nil, IPv4Addr: ip, DeviceNumber: int32(deviceNumber)}, nil
 }

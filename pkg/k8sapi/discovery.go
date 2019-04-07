@@ -25,6 +25,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+var UnKnownPod = errors.New("discovery: unknown pod")
+
 type controller struct {
 	indexer  cache.Indexer
 	queue    workqueue.RateLimitingInterface
@@ -35,6 +37,7 @@ type controller struct {
 type K8SAPIs interface {
 	K8SGetLocalPodIPs() ([]*K8SPodInfo, error)
 	GetPodSpec() *map[string]K8SPodInfo
+	GetPodNetwork(key string) (string, error)
 }
 
 // K8SPodInfo provides pod info
@@ -49,6 +52,7 @@ type K8SPodInfo struct {
 	IP      string
 	UID     string
 	Network string
+	Port    int
 }
 
 // ErrInformerNotSynced indicates that it has not synced with API server yet
@@ -159,6 +163,19 @@ func (d *Controller) K8SGetLocalPodIPs() ([]*K8SPodInfo, error) {
 	}
 
 	return localPods, nil
+}
+
+func (d *Controller) GetPodNetwork(key string) (string, error) {
+	d.workerPodsLock.Lock()
+	defer d.workerPodsLock.Unlock()
+
+	pod, ok := d.workerPods[key]
+
+	if !ok {
+		return "", UnKnownPod
+	}
+
+	return pod.Network, nil
 }
 
 func (d *Controller) GetPodSpec() *map[string]K8SPodInfo {

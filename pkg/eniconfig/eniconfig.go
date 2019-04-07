@@ -32,6 +32,8 @@ import (
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
 
 	log "github.com/cihub/seelog"
+
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig/portstore"
 )
 
 const (
@@ -48,11 +50,18 @@ const (
 	//   This will set eniConfigLabelDef to eniConfigOverride
 	envEniConfigAnnotationDef = "ENI_CONFIG_ANNOTATION_DEF"
 	envEniConfigLabelDef      = "ENI_CONFIG_LABEL_DEF"
+
+	eniConfigPortStart = 4000
+	eniConfigPortNum   = 300
 )
+
+var UnKnownNetwork = errors.New("eniconfig: unknown network")
 
 type ENIConfig interface {
 	MyENIConfig() (*v1alpha1.ENIConfigSpec, error)
 	Getter() *ENIConfigInfo
+	AllocatePort(networkName string, podName string) (int, string, string, error)
+	ReleasePort(networkName string, port int) error
 }
 
 var ErrNoENIConfig = errors.New("eniconfig: eniconfig is not available")
@@ -60,6 +69,7 @@ var ErrNoENIConfig = errors.New("eniconfig: eniconfig is not available")
 // ENIConfigController defines global context for ENIConfig controller
 type ENIConfigController struct {
 	eni                    map[string]*v1alpha1.ENIConfigSpec
+	portMap                map[string]*portstore.PortMap
 	myENI                  string
 	eniLock                sync.RWMutex
 	myNodeName             string
@@ -80,6 +90,7 @@ func NewENIConfigController() *ENIConfigController {
 	return &ENIConfigController{
 		myNodeName: os.Getenv("MY_NODE_NAME"),
 		eni:        make(map[string]*v1alpha1.ENIConfigSpec),
+		portMap:    make(map[string]*portstore.PortMap),
 		myENI:      eniConfigDefault,
 		eniConfigAnnotationDef: getEniConfigAnnotationDef(),
 		eniConfigLabelDef:      getEniConfigLabelDef(),
@@ -110,6 +121,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			h.controller.eniLock.Lock()
 			defer h.controller.eniLock.Unlock()
 			delete(h.controller.eni, eniConfigName)
+			delete(h.controller.portMap, eniConfigName)
 			return nil
 		}
 
@@ -119,6 +131,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		h.controller.eniLock.Lock()
 		defer h.controller.eniLock.Unlock()
 		h.controller.eni[eniConfigName] = &curENIConfig.Spec
+		h.controller.portMap[eniConfigName] = portstore.PortMapInit(eniConfigPortNum, eniConfigPortStart)
 
 	case *corev1.Node:
 
@@ -167,6 +180,52 @@ func (eniCfg *ENIConfigController) Start() {
 	sdk.Watch("/v1", "Node", corev1.NamespaceAll, resyncPeriod)
 	sdk.Handle(NewHandler(eniCfg))
 	sdk.Run(context.TODO())
+}
+
+func (eniCfg *ENIConfigController) AllocatePort(networkName string, podName string) (int, string, string, error) {
+	log.Debugf("AllocatePort: networkName: %s, podName %s", networkName, podName)
+	eni, ok := eniCfg.eni[networkName]
+	if !ok {
+		log.Errorf("AllocatePort: failed to find eni config for network :%v pod %v", networkName, podName)
+		return -1, "", "", UnKnownNetwork
+	}
+
+	portMap, ok := eniCfg.portMap[networkName]
+
+	if !ok {
+		log.Errorf("AllocatePort: failed to find portMap for network :%v pod %v", networkName, podName)
+		return -1, "", "", UnKnownNetwork
+	}
+
+	port, err := portstore.PortMapAllocPort(portMap, podName)
+
+	if err != nil {
+		log.Errorf("AllocatePort: failed to allocate port: err=%v for pod :%v", err, podName)
+		return -1, "", "", err
+	}
+
+	log.Debugf("AllocatePort: Successfully allocated port :%v , CGWIP: %v, VNID: %v for pod %v", port, eni.CGWIP, eni.VNID, podName)
+	return port, eni.CGWIP, eni.VNID, nil
+
+}
+
+func (eniCfg *ENIConfigController) ReleasePort(networkName string, port int) error {
+
+	log.Debugf("ReleasePort: networkName %v, port %v", networkName, port)
+	portMap, ok := eniCfg.portMap[networkName]
+
+	if !ok {
+		log.Errorf("ReleasePort: failed to find portMap for network :%v pod %v", networkName, port)
+		return UnKnownNetwork
+	}
+
+	err := portstore.PortMapReleasePort(portMap, port)
+
+	if err != nil {
+		log.Errorf("ReleasePort, failed on PortMapRelease for network %v, port %v", networkName, port)
+		return err
+	}
+	return nil
 }
 
 func (eniCfg *ENIConfigController) Getter() *ENIConfigInfo {

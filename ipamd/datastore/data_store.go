@@ -116,6 +116,7 @@ type PodIPInfo struct {
 	IP string
 	// DeviceNumber is the device number of  pod
 	DeviceNumber int
+	Port         int
 }
 
 // DataStore contains node level ENI/IP
@@ -306,7 +307,7 @@ func (ds *DataStore) assignPodIPv4AddressUnsafe(k8sPod *k8sapi.K8SPodInfo) (stri
 				assignedIPs.Set(float64(ds.assigned))
 				eni.AssignedIPv4Addresses++
 				addr.Assigned = true
-				ds.podsIP[podKey] = PodIPInfo{IP: addr.address, DeviceNumber: eni.DeviceNumber}
+				ds.podsIP[podKey] = PodIPInfo{IP: addr.address, DeviceNumber: eni.DeviceNumber, Port: k8sPod.Port}
 				log.Infof("AssignPodIPv4Address Assign IP %v to pod (name %s, namespace %s container %s)",
 					addr.address, k8sPod.Name, k8sPod.Namespace, k8sPod.Container)
 				return addr.address, eni.DeviceNumber, nil
@@ -416,7 +417,7 @@ func (ds *DataStore) DeleteENI(eni string) error {
 
 // UnAssignPodIPv4Address a) find out the IP address based on PodName and PodNameSpace
 // b)  mark IP address as unassigned c) returns IP address, ENI's device number, error
-func (ds *DataStore) UnAssignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (string, int, error) {
+func (ds *DataStore) UnAssignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (string, int, int, error) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 	log.Debugf("UnAssignIPv4Address: IP address pool stats: total:%d, assigned %d, pod(Name: %s, Namespace: %s, Container %s)",
@@ -431,7 +432,7 @@ func (ds *DataStore) UnAssignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (string, 
 	if !ok {
 		log.Warnf("UnassignIPv4Address: Failed to find pod %s namespace %s Container %s",
 			k8sPod.Name, k8sPod.Namespace, k8sPod.Container)
-		return "", 0, ErrUnknownPod
+		return "", 0, -1, ErrUnknownPod
 	}
 
 	for _, eni := range ds.eniIPPools {
@@ -447,13 +448,13 @@ func (ds *DataStore) UnAssignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (string, 
 			log.Infof("UnAssignIPv4Address: pod (Name: %s, NameSpace %s Container %s)'s ipAddr %s, DeviceNumber%d",
 				k8sPod.Name, k8sPod.Namespace, k8sPod.Container, ip.address, eni.DeviceNumber)
 			delete(ds.podsIP, podKey)
-			return ip.address, eni.DeviceNumber, nil
+			return ip.address, eni.DeviceNumber, ipAddr.Port, nil
 		}
 	}
 
 	log.Warnf("UnassignIPv4Address: Failed to find pod %s namespace %s container %s using IP %s",
 		k8sPod.Name, k8sPod.Namespace, k8sPod.Container, ipAddr.IP)
-	return "", 0, ErrUnknownPodIP
+	return "", 0, -1, ErrUnknownPodIP
 }
 
 // GetPodInfos provides pod IP information to introspection endpoint

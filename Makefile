@@ -40,7 +40,7 @@ download-portmap:
 # Default to build the Linux binary
 build-linux:
 	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-k8s-agent -ldflags "$(LDFLAGS)"
-	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-cni -ldflags "$(LDFLAGS)" ./plugins/routed-eni/
+	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-cni -ldflags "$(LDFLAGS)" ./plugins/geneve-eni/
 
 docker-build:
 	docker run -v $(shell pwd):/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
