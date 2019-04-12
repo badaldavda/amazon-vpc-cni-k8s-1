@@ -88,10 +88,10 @@ type ENIConfigInfo struct {
 // NewENIConfigController creates a new ENIConfig controller
 func NewENIConfigController() *ENIConfigController {
 	return &ENIConfigController{
-		myNodeName: os.Getenv("MY_NODE_NAME"),
-		eni:        make(map[string]*v1alpha1.ENIConfigSpec),
-		portMap:    make(map[string]*portstore.PortMap),
-		myENI:      eniConfigDefault,
+		myNodeName:             os.Getenv("MY_NODE_NAME"),
+		eni:                    make(map[string]*v1alpha1.ENIConfigSpec),
+		portMap:                make(map[string]*portstore.PortMap),
+		myENI:                  eniConfigDefault,
 		eniConfigAnnotationDef: getEniConfigAnnotationDef(),
 		eniConfigLabelDef:      getEniConfigLabelDef(),
 	}
@@ -130,8 +130,13 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 
 		h.controller.eniLock.Lock()
 		defer h.controller.eniLock.Unlock()
+
+		_, ok := h.controller.eni[eniConfigName]
 		h.controller.eni[eniConfigName] = &curENIConfig.Spec
-		h.controller.portMap[eniConfigName] = portstore.PortMapInit(eniConfigPortNum, eniConfigPortStart)
+
+		if !ok {
+			h.controller.portMap[eniConfigName] = portstore.PortMapInit(eniConfigPortNum, eniConfigPortStart)
+		}
 
 	case *corev1.Node:
 

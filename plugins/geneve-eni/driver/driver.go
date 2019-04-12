@@ -22,6 +22,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
@@ -47,13 +48,15 @@ const (
 	mainRouteTable = unix.RT_TABLE_MAIN
 	// MTU of veth - ENI MTU defined in pkg/networkutils/network.go
 	ethernetMTU = 9001
+
+	retryAddLinInterval = 1 * time.Second
 )
 
 // NetworkAPIs defines network API calls
 type NetworkAPIs interface {
 	SetupNS(hostVethName string, contVethName string, geneveName string, brName string, netnsPath string, addr *net.IPNet, table int,
 		vpcCIDRs []string, useExternalSNAT bool, cgwIP string, vni string, port int32) error
-	TeardownNS(addr *net.IPNet, table int) error
+	TeardownNS(addr *net.IPNet, table int, hostVethName string, contVethName string, geneveName string) error
 }
 
 type linuxNetwork struct {
@@ -198,11 +201,24 @@ func setupNS(hostVethName string, contVethName string, geneveName string, brName
 		log.Errorf("setupNS: %v", err)
 	}
 
-	geneveVeth, err := netLink.LinkByName(geneveName)
+	var geneveVeth netlink.Link
+	retry := 0
+	for {
+		retry++
 
-	if err != nil {
-		log.Errorf("Setup NS network: failed to find link %q", geneveName)
-		return errors.Wrapf(err, "setup NS network: failed to find link %q", geneveName)
+		if retry > 5 {
+			return errors.Wrapf(err, "setup NS network: failed to find link %q", geneveName)
+		}
+
+		geneveVeth, err = netLink.LinkByName(geneveName)
+		if err != nil {
+			log.Errorf("Not able to  Setup NS network: failed to find link %q (attempt %d/%d): %v", geneveName, retry, 5, err)
+			time.Sleep(retryAddLinInterval)
+			continue
+		} else {
+			log.Infof("SetupNS network: found %v", geneveName)
+			break
+		}
 	}
 
 	if err = netLink.LinkSetUp(geneveVeth); err != nil {
@@ -345,17 +361,39 @@ func addContainerRule(netLink netlinkwrapper.NetLink, isToContainer bool, addr *
 }
 
 // TeardownPodNetwork cleanup ip rules
-func (os *linuxNetwork) TeardownNS(addr *net.IPNet, table int) error {
+func (os *linuxNetwork) TeardownNS(addr *net.IPNet, table int, hostVethName string, geneveName string, brName string) error {
 	log.Debugf("TeardownNS: addr %s, table %d", addr.String(), table)
-	return tearDownNS(addr, table, os.netLink)
+	return tearDownNS(addr, table, os.netLink, hostVethName, geneveName, brName)
 }
 
-func tearDownNS(addr *net.IPNet, table int, netLink netlinkwrapper.NetLink) error {
+func tearDownNS(addr *net.IPNet, table int, netLink netlinkwrapper.NetLink, hostVethName string, geneveName string, brName string) error {
+
+	// remove geneveName from bridge
+	geneveVeth, err := netLink.LinkByName(geneveName)
+
+	if err != nil {
+		log.Errorf("tearDownNS network: failed to find link %q", geneveName)
+	} else {
+		err = netlink.LinkSetNoMaster(geneveVeth)
+		log.Infof("tearDownNS network: brctl del br intf(geneveVeth: %v), error: %v", geneveName, err)
+		err = netlink.LinkDel(geneveVeth)
+		log.Infof("tearDownNS network: netlink.LinkDel %v, error: %v", geneveName, err)
+	}
+
+	br, err := bridgeByName(brName)
+
+	if err != nil {
+		log.Errorf("tearDownNS network: Failed to find bridge %v: error:%v", brName, err)
+	} else {
+		err = netlink.LinkDel(br)
+		log.Infof("tearDownNS network: netlink.LinkDel %v, error: %v", br, err)
+	}
+
 	// remove to-pod rule
 	toContainerRule := netLink.NewRule()
 	toContainerRule.Dst = addr
 	toContainerRule.Priority = toContainerRulePriority
-	err := netLink.RuleDel(toContainerRule)
+	err = netLink.RuleDel(toContainerRule)
 
 	if err != nil {
 		log.Errorf("Failed to delete toContainer rule for %s err %v", addr.String(), err)

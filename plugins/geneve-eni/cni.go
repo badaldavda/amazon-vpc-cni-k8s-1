@@ -142,7 +142,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			K8S_POD_NAME:               string(k8sArgs.K8S_POD_NAME),
 			K8S_POD_NAMESPACE:          string(k8sArgs.K8S_POD_NAMESPACE),
 			K8S_POD_INFRA_CONTAINER_ID: string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
-			IfName: args.IfName})
+			IfName:                     args.IfName})
 
 	if err != nil {
 		log.Errorf("Error received from AddNetwork grpc call for pod %s namespace %s container %s: %v",
@@ -302,7 +302,11 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
 
-	err = driverClient.TeardownNS(addr, int(r.DeviceNumber))
+	hostVethName := generateHostVethName(conf.VethPrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+	geneveName := generateGeneveName(conf.VethPrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+	brName := generateBrName(conf.VethPrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+
+	err = driverClient.TeardownNS(addr, int(r.DeviceNumber), hostVethName, geneveName, brName)
 
 	if err != nil {
 		log.Errorf("Failed on TeardownPodNetwork for pod %s namespace %s container %s: %v",
